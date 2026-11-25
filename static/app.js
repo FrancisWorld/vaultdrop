@@ -1,3 +1,5 @@
+import { decryptChunk, encryptChunk } from "./crypto.js";
+
 const fileInput = document.querySelector("#file");
 const fileName = document.querySelector("#fileName");
 const status = document.querySelector("#status");
@@ -13,23 +15,22 @@ async function sha256(buffer) {
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function encryptFile(file, key) {
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const plain = await file.arrayBuffer();
-  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plain);
-  const envelope = new Uint8Array(iv.length + encrypted.byteLength);
-  envelope.set(iv);
-  envelope.set(new Uint8Array(encrypted), iv.length);
-  return envelope;
-}
-
 async function upload() {
   const file = fileInput.files[0];
   if (!file) { status.textContent = "Choose a file first."; return; }
   const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
   status.textContent = "Encrypting in your browser...";
-  const encrypted = await encryptFile(file, key);
-  const cipherText = new Blob([encrypted], { type: "application/octet-stream" });
+  const plainSize = file.size;
+  const plainPartSize = 8 * 1024 * 1024 - 28;
+  const partCount = plainSize ? Math.ceil(plainSize / plainPartSize) : 1;
+  const ciphertextParts = [];
+  for (let i = 0; i < partCount; i++) {
+    const start = i * plainPartSize;
+    const end = Math.min(start + plainPartSize, plainSize);
+    const plain = await file.slice(start, end).arrayBuffer();
+    ciphertextParts.push(await encryptChunk(plain, key, i, i === partCount - 1));
+  }
+  const cipherText = new Blob(ciphertextParts, { type: "application/octet-stream" });
   const checksum = await sha256(await cipherText.arrayBuffer());
   const partSize = 8 * 1024 * 1024;
   progress.hidden = false;
@@ -42,10 +43,9 @@ async function upload() {
   if (!initiated.upload_id) throw new Error(initiated.detail || "Upload initiation failed");
 
   const completeParts = [];
-  const parts = encrypted.length ? Math.ceil(encrypted.length / partSize) : 1;
+  const parts = ciphertextParts.length;
   for (let i = 0; i < parts; i++) {
-    const start = i * partSize;
-    const chunk = encrypted.slice(start, start + partSize);
+    const chunk = ciphertextParts[i];
     const url = initiated.urls[i].url;
     const response = await fetch(url, { method: "PUT", body: chunk });
     const etag = response.headers.get("ETag");
@@ -102,8 +102,21 @@ async function redeem() {
   const cipher = new Uint8Array(await cipherBlob.arrayBuffer());
   const keyBytes = new Uint8Array(keyText.match(/.{1,2}/g).map((byte) => parseInt(byte, 16)));
   const key = await crypto.subtle.importKey("raw", keyBytes, "AES-GCM", false, ["decrypt"]);
-  const iv = cipher.slice(0, 12);
-  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, cipher.slice(12));
+  const partSize = 8 * 1024 * 1024;
+  const parts = Math.ceil(cipher.length / partSize);
+  const plainChunks = [];
+  for (let i = 0; i < parts; i++) {
+    const final = i === parts - 1;
+    const envelope = cipher.slice(i * partSize, Math.min((i + 1) * partSize, cipher.length));
+    plainChunks.push(await decryptChunk(envelope, key, i, final));
+  }
+  const plainLength = plainChunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+  const plain = new Uint8Array(plainLength);
+  let offset = 0;
+  for (const chunk of plainChunks) {
+    plain.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
   const link = document.createElement("a");
   link.href = URL.createObjectURL(new Blob([plain]));
   link.download = "vaultdrop-recovered";
