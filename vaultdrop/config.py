@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     default_quota_bytes: int = 1_073_741_824
     cors_origins: str = "http://localhost:8000"
     presigned_expiry_seconds: int = 900
+    session_secret: str = "replace-me-local-development-secret"
+    password_attempt_limit: int = 5
 
 
 @lru_cache
