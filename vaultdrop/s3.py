@@ -75,6 +75,12 @@ class S3Service:
             raise RuntimeError("S3 returned no readable object body")
         return cast(BinaryIO, body)
 
+    def list_parts(self, key: str, upload_id: str) -> list[dict[str, object]]:
+        response = self.client.list_parts(
+            Bucket=self.bucket, Key=key, UploadId=upload_id
+        )
+        return [dict(part) for part in response.get("Parts", [])]
+
     def presigned_download(self, key: str, filename: str) -> str:
         return str(
             self.client.generate_presigned_url(
