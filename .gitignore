@@ -12,6 +12,7 @@ build/
 .env
 *.log
 .DS_Store
+*.egg-info/
 terraform/.terraform/
 *.tfstate
 *.tfstate.*
