@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+      - run: uv python install 3.12
+      - run: uv sync --locked --python 3.12
+      - run: uv run ruff check .
+      - run: uv run mypy --strict vaultdrop tests
+      - run: uv run pytest tests -q
+
+  infrastructure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: "1.10.6"
+      - run: tofu fmt -check -recursive terraform
+      - run: tofu -chdir=terraform init -backend=false
+      - run: tofu -chdir=terraform validate
