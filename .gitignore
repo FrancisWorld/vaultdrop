@@ -12,3 +12,6 @@ build/
 .env
 *.log
 .DS_Store
+terraform/.terraform/
+*.tfstate
+*.tfstate.*
