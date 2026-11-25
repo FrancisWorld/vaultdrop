@@ -30,7 +30,12 @@ def aws() -> Iterator[object]:
 
 @pytest.fixture
 def client(aws: object) -> Iterator[TestClient]:
-    from vaultdrop.api import app
+    import uuid
 
+    from vaultdrop.api import app
     with TestClient(app) as test_client:
+        test_client.post(
+            "/v1/auth/register",
+            json={"username": f"user-{uuid.uuid4().hex[:8]}", "password": "correct-horse-battery"},
+        )
         yield test_client
