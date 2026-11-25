@@ -1,4 +1,4 @@
-from collections.abc import BinaryIO
+from typing import BinaryIO
 
 import boto3
 from botocore.config import Config
@@ -56,6 +56,9 @@ class S3Service:
 
     def abort_multipart(self, key: str, upload_id: str) -> None:
         self.client.abort_multipart_upload(Bucket=self.bucket, Key=key, UploadId=upload_id)
+
+    def delete_object(self, key: str) -> None:
+        self.client.delete_object(Bucket=self.bucket, Key=key)
 
     def head(self, key: str) -> dict[str, object]:
         return dict(self.client.head_object(Bucket=self.bucket, Key=key))

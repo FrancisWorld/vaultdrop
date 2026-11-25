@@ -9,11 +9,12 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from .config import get_settings
 from .database import create_all, session_scope
 from .models import AuditEvent, FileRecord, MultipartUpload, ShareLink
+from .planning import part_count
 from .s3 import S3Service
 
 app = FastAPI(title="VaultDrop", version="0.1.0")
@@ -105,7 +106,7 @@ def initiate(body: InitiateRequest, actor: str = Depends(owner_id)) -> InitiateR
         db.add(record)
         db.flush()
 
-        count = max(1, (body.size_bytes + body.part_size - 1) // body.part_size)
+        count = part_count(body.size_bytes, body.part_size)
         urls = [
             {"part_number": part, "url": s3.presign_part(key, upload_id, part)}
             for part in range(1, count + 1)
@@ -139,7 +140,7 @@ def complete(upload_id: str, body: CompleteRequest, actor: str = Depends(owner_i
         stream.close()
         actual = digest.hexdigest()
         if actual != record.sha256:
-            s3.abort_multipart(record.s3_key, record.upload_id)
+            s3.delete_object(record.s3_key)
             record.status = "failed"
             audit(db, actor, "upload.checksum_failed", record.id, "SHA-256 mismatch")
             raise HTTPException(status_code=422, detail="SHA-256 checksum mismatch")
@@ -247,7 +248,10 @@ def redeem_share(token: str, password: str | None = Query(default=None)) -> dict
         if not share:
             raise HTTPException(status_code=404, detail="Share not found")
         now = dt.datetime.now(dt.UTC)
-        if share.expires_at and share.expires_at <= now:
+        expires_at = share.expires_at
+        if expires_at and expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=dt.UTC)
+        if expires_at and expires_at <= now:
             raise HTTPException(status_code=410, detail="Share expired")
         if share.max_downloads is not None and share.downloads >= share.max_downloads:
             raise HTTPException(status_code=410, detail="Download limit reached")
@@ -261,7 +265,17 @@ def redeem_share(token: str, password: str | None = Query(default=None)) -> dict
         file_record = db.get(FileRecord, share.file_id)
         if not file_record:
             raise HTTPException(status_code=404, detail="Shared file not found")
-        share.downloads += 1
+        claimed = db.execute(
+            update(ShareLink)
+            .where(
+                ShareLink.id == share.id,
+                (ShareLink.max_downloads.is_(None))
+                | (ShareLink.downloads < ShareLink.max_downloads),
+            )
+            .values(downloads=ShareLink.downloads + 1)
+        )
+        if claimed.rowcount != 1:
+            raise HTTPException(status_code=410, detail="Download limit reached")
         audit(db, "anonymous", "share.downloaded", share.id, f"Redeemed share {share.id}")
         url = s3.presigned_download(file_record.s3_key, file_record.filename)
         return {"download_url": url}
