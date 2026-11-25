@@ -1,11 +1,13 @@
 services:
   s3:
     image: motoserver/moto:latest
+    container_name: vaultdrop-moto-local
     command: ["-H", "0.0.0.0"]
     ports:
       - "127.0.0.1:55000:5000"
   app:
     build: .
+    container_name: vaultdrop-app-local
     depends_on:
       - s3
     ports:

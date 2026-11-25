@@ -20,6 +20,7 @@ jobs:
       - run: uv run ruff check .
       - run: uv run mypy --strict vaultdrop tests
       - run: uv run pytest tests -q
+      - run: node --test tests/crypto.test.js
 
   infrastructure:
     runs-on: ubuntu-latest
