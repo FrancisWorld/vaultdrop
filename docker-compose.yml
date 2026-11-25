@@ -1,0 +1,19 @@
+services:
+  s3:
+    image: motoserver/moto:latest
+    command: ["-H", "0.0.0.0"]
+    ports:
+      - "127.0.0.1:55000:5000"
+  app:
+    build: .
+    depends_on:
+      - s3
+    ports:
+      - "127.0.0.1:55001:8000"
+    environment:
+      VAULTDROP_DATABASE_URL: sqlite:///./vaultdrop.db
+      VAULTDROP_AWS_REGION: us-east-1
+      VAULTDROP_S3_BUCKET: vaultdrop-local
+      VAULTDROP_S3_ENDPOINT: http://s3:5000
+      AWS_ACCESS_KEY_ID: replace-me
+      AWS_SECRET_ACCESS_KEY: replace-me
