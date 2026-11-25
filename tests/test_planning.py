@@ -1,7 +1,6 @@
+import pytest
 from hypothesis import given
 from hypothesis import strategies as st
-
-import pytest
 
 from vaultdrop.planning import part_count, part_ranges
 
