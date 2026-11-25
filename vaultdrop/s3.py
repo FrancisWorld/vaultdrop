@@ -1,4 +1,4 @@
-from typing import BinaryIO
+from typing import Any, BinaryIO, cast
 
 import boto3
 from botocore.config import Config
@@ -20,7 +20,7 @@ class S3Service:
             self.client.head_bucket(Bucket=self.bucket)
         except Exception:
             region = get_settings().aws_region
-            params = {"Bucket": self.bucket}
+            params: dict[str, Any] = {"Bucket": self.bucket}
             if region != "us-east-1":
                 params["CreateBucketConfiguration"] = {"LocationConstraint": region}
             self.client.create_bucket(**params)
@@ -38,7 +38,12 @@ class S3Service:
         return str(
             self.client.generate_presigned_url(
                 "upload_part",
-                Params={"Bucket": self.bucket, "Key": key, "UploadId": upload_id, "PartNumber": part_number},
+                Params={
+                    "Bucket": self.bucket,
+                    "Key": key,
+                    "UploadId": upload_id,
+                    "PartNumber": part_number,
+                },
                 ExpiresIn=get_settings().presigned_expiry_seconds,
                 HttpMethod="PUT",
             )
@@ -68,7 +73,7 @@ class S3Service:
         body = response["Body"]
         if not hasattr(body, "read"):
             raise RuntimeError("S3 returned no readable object body")
-        return body
+        return cast(BinaryIO, body)
 
     def presigned_download(self, key: str, filename: str) -> str:
         return str(

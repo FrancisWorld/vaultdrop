@@ -2,6 +2,7 @@ import datetime as dt
 import hashlib
 import secrets
 from collections.abc import AsyncIterator
+from typing import cast
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
@@ -10,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
+from sqlalchemy.engine import CursorResult
 
 from .config import get_settings
 from .database import create_all, session_scope
@@ -85,7 +87,9 @@ def health() -> dict[str, str]:
 def initiate(body: InitiateRequest, actor: str = Depends(owner_id)) -> InitiateResponse:
     with session_scope() as db:
         used = db.scalar(
-            select(func.coalesce(func.sum(FileRecord.size_bytes), 0)).where(FileRecord.owner_id == actor)
+            select(func.coalesce(func.sum(FileRecord.size_bytes), 0)).where(
+                FileRecord.owner_id == actor
+            )
         )
         used = int(used or 0)
         if used + body.size_bytes > get_settings().default_quota_bytes:
@@ -122,7 +126,9 @@ def initiate(body: InitiateRequest, actor: str = Depends(owner_id)) -> InitiateR
 
 
 @app.post("/v1/uploads/{upload_id}/complete")
-def complete(upload_id: str, body: CompleteRequest, actor: str = Depends(owner_id)) -> dict[str, str]:
+def complete(
+    upload_id: str, body: CompleteRequest, actor: str = Depends(owner_id)
+) -> dict[str, str]:
     with session_scope() as db:
         record = db.get(MultipartUpload, upload_id)
         if not record or record.owner_id != actor or record.status != "active":
@@ -146,7 +152,8 @@ def complete(upload_id: str, body: CompleteRequest, actor: str = Depends(owner_i
             raise HTTPException(status_code=422, detail="SHA-256 checksum mismatch")
 
         head = s3.head(record.s3_key)
-        size = int(head.get("ContentLength", record.size_bytes))
+        content_length = head.get("ContentLength")
+        size = int(content_length) if isinstance(content_length, (int, str)) else record.size_bytes
         file_record = FileRecord(
             owner_id=actor,
             s3_key=record.s3_key,
@@ -176,7 +183,11 @@ def abort(upload_id: str, actor: str = Depends(owner_id)) -> Response:
 @app.get("/v1/files")
 def files(actor: str = Depends(owner_id)) -> list[dict[str, object]]:
     with session_scope() as db:
-        rows = db.scalars(select(FileRecord).where(FileRecord.owner_id == actor).order_by(FileRecord.created_at.desc()))
+        rows = db.scalars(
+            select(FileRecord)
+            .where(FileRecord.owner_id == actor)
+            .order_by(FileRecord.created_at.desc())
+        )
         return [
             {
                 "id": row.id,
@@ -190,9 +201,7 @@ def files(actor: str = Depends(owner_id)) -> list[dict[str, object]]:
 
 
 @app.post("/v1/files/{file_id}/shares", response_model=ShareResponse)
-def create_share(
-    file_id: str, body: ShareRequest, actor: str = Depends(owner_id)
-) -> ShareResponse:
+def create_share(file_id: str, body: ShareRequest, actor: str = Depends(owner_id)) -> ShareResponse:
     with session_scope() as db:
         file_record = db.get(FileRecord, file_id)
         if not file_record or file_record.owner_id != actor:
@@ -265,14 +274,17 @@ def redeem_share(token: str, password: str | None = Query(default=None)) -> dict
         file_record = db.get(FileRecord, share.file_id)
         if not file_record:
             raise HTTPException(status_code=404, detail="Shared file not found")
-        claimed = db.execute(
-            update(ShareLink)
-            .where(
-                ShareLink.id == share.id,
-                (ShareLink.max_downloads.is_(None))
-                | (ShareLink.downloads < ShareLink.max_downloads),
-            )
-            .values(downloads=ShareLink.downloads + 1)
+        claimed = cast(
+            CursorResult[tuple[object, ...]],
+            db.execute(
+                update(ShareLink)
+                .where(
+                    ShareLink.id == share.id,
+                    (ShareLink.max_downloads.is_(None))
+                    | (ShareLink.downloads < ShareLink.max_downloads),
+                )
+                .values(downloads=ShareLink.downloads + 1)
+            ),
         )
         if claimed.rowcount != 1:
             raise HTTPException(status_code=410, detail="Download limit reached")
@@ -305,7 +317,8 @@ def abort_stale(actor: str = Depends(owner_id)) -> dict[str, int]:
 def audit_list(actor: str = Depends(owner_id)) -> list[dict[str, object]]:
     with session_scope() as db:
         rows = db.scalars(
-            select(AuditEvent).where(AuditEvent.actor_id.in_([actor, "anonymous"]))
+            select(AuditEvent)
+            .where(AuditEvent.actor_id.in_([actor, "anonymous"]))
             .order_by(AuditEvent.created_at.desc())
             .limit(500)
         )

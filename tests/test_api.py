@@ -1,5 +1,6 @@
 import hashlib
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any, cast
 from urllib.parse import parse_qs, unquote, urlparse
 
 from fastapi.testclient import TestClient
@@ -13,7 +14,7 @@ def test_health(client: TestClient) -> None:
 
 def upload_part(aws: object, url: str, payload: bytes) -> str:
     query = parse_qs(urlparse(url).query)
-    method = getattr(aws, "upload_part")
+    method = cast(Any, aws).upload_part
     response = method(
         Bucket="vaultdrop-test-bucket",
         Key=unquote(urlparse(url).path.lstrip("/")),
@@ -97,7 +98,12 @@ def test_download_limit_is_atomic(client: TestClient, aws: object) -> None:
     checksum = hashlib.sha256(payload).hexdigest()
     upload = client.post(
         "/v1/uploads",
-        json={"filename": "race.bin", "size_bytes": len(payload), "sha256": checksum, "part_size": 5 * 1024 * 1024},
+        json={
+            "filename": "race.bin",
+            "size_bytes": len(payload),
+            "sha256": checksum,
+            "part_size": 5 * 1024 * 1024,
+        },
     ).json()
     etag = upload_part(aws, upload["urls"][0]["url"], payload)
     completed = client.post(
@@ -110,7 +116,7 @@ def test_download_limit_is_atomic(client: TestClient, aws: object) -> None:
     ).json()
 
     def redeem() -> int:
-        return client.get(f"/s/{share['token']}").status_code
+        return cast(int, client.get(f"/s/{share['token']}").status_code)
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         statuses = list(pool.map(lambda _: redeem(), range(2)))

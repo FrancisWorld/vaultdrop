@@ -8,6 +8,5 @@ def part_count(size_bytes: int, part_size: int) -> int:
 
 def part_ranges(size_bytes: int, part_size: int) -> list[tuple[int, int]]:
     return [
-        (start, min(start + part_size, size_bytes) - 1)
-        for start in range(0, size_bytes, part_size)
+        (start, min(start + part_size, size_bytes) - 1) for start in range(0, size_bytes, part_size)
     ]
