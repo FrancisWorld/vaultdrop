@@ -1,0 +1,23 @@
+:root { color-scheme: dark; --bg:#090b10; --panel:#121722; --line:#262d3d; --cyan:#63d9ca; --text:#edf4f2; }
+* { box-sizing:border-box; }
+body { margin:0; min-height:100vh; font-family:ui-sans-serif,system-ui,-apple-system,sans-serif; background:radial-gradient(circle at 75% 10%,#172b30 0,transparent 32%),var(--bg); color:var(--text); }
+main { max-width:760px; margin:0 auto; padding:64px 24px; }
+header { display:flex; align-items:center; gap:14px; margin-bottom:24px; }
+.mark { width:52px;height:52px;border:1px solid #4a776f;border-radius:14px;display:grid;place-items:center;font-weight:800;color:var(--cyan);background:#101c1d; }
+h1,h2,p { margin:0 } h1 { font-size:28px } header p { color:#99a7a4;margin-top:4px }
+.card { border:1px solid var(--line);border-radius:18px;padding:28px;background:rgba(18,23,34,.92);box-shadow:0 24px 80px #0006 }
+.card h2 { margin-bottom:18px }
+.drop { height:180px;border:1px dashed #4d5a63;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;cursor:pointer;background:#0d1118 }
+.drop input { width:1px;height:1px;position:absolute;opacity:0 }
+.drop span { color:#899692;font-size:13px }
+.row { display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin:18px 0 }
+.row label { color:#aab5b2;font-size:12px } input,select { width:100%;margin-top:7px;padding:10px;border:1px solid var(--line);border-radius:8px;background:#090c12;color:var(--text) }
+button { border:0;border-radius:9px;padding:12px 16px;background:var(--cyan);color:#07100f;font-weight:800;cursor:pointer }
+#upload { width:100%;margin-top:2px }
+#progress { height:8px;border-radius:99px;background:#090c12;margin-top:14px;overflow:hidden } #bar { height:100%;width:0;background:var(--cyan);transition:width .2s }
+#status { min-height:20px;margin-top:12px;color:#b4c1bd }
+#result { display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:12px } #result[hidden]{display:none}
+@media(max-width:620px){ main{padding:32px 16px}.row{grid-template-columns:1fr}}
+[hidden] { display:none !important }
+button.link { background:none;color:var(--cyan);font-size:12px;padding:0 0 0 12px;font-weight:600 }
+#download { margin-top:12px }

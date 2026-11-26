@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>VaultDrop</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div class="mark">VD</div>
+      <div><h1>VaultDrop</h1><p>Encrypted, expiring file delivery</p></div>
+    </header>
+
+    <section class="card" id="receive" hidden>
+      <h2>Encrypted drop</h2>
+      <p>This file is decrypted in your browser. The key never leaves the link you were given.</p>
+      <label id="passwordRow" hidden>Password <input id="sharePassword" type="password" maxlength="256" autocomplete="off"></label>
+      <button id="download" type="button">Download and decrypt</button>
+    </section>
+
+    <section class="card" id="auth" hidden>
+      <h2>Sign in</h2>
+      <div class="row">
+        <label>Username <input id="username" autocomplete="username" maxlength="128"></label>
+        <label>Password <input id="accountPassword" type="password" autocomplete="current-password" maxlength="256"></label>
+      </div>
+      <div class="row"><button id="login" type="button">Sign in</button><button id="register" type="button">Create account</button></div>
+    </section>
+
+    <section class="card" id="send" hidden>
+      <h2>New drop <button id="logout" type="button" class="link">Sign out</button></h2>
+      <label class="drop" id="drop">
+        <input id="file" type="file">
+        <strong id="fileName">Choose or drop a file</strong>
+        <span>Encrypted locally with AES-256-GCM before upload</span>
+      </label>
+      <div class="row">
+        <label>Password (optional) <input id="password" type="password" maxlength="256" autocomplete="new-password"></label>
+        <label>Downloads <input id="downloads" type="number" min="1" max="100000" value="5"></label>
+        <label>Expires
+          <select id="expires"><option value="3600">1 hour</option><option value="86400">1 day</option><option value="604800">7 days</option></select>
+        </label>
+      </div>
+      <button id="upload" type="button">Create encrypted drop</button>
+      <div id="progress" hidden><div id="bar"></div></div>
+      <div id="result" hidden><input id="shareUrl" readonly aria-label="Share link"><button id="copy" type="button">Copy link</button></div>
+    </section>
+
+    <p id="status" role="status"></p>
+  </main>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
