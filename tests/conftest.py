@@ -21,17 +21,14 @@ REQUIRE_SERVICES = os.environ.get("VAULTDROP_REQUIRE_SERVICES") == "1"
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Skip PostgreSQL-only tests on other backends, unless services are required (CI)."""
     on_postgres = bool(DATABASE_URL and DATABASE_URL.startswith("postgresql"))
+    if on_postgres or REQUIRE_SERVICES:
+        return
+    skip = pytest.mark.skip(reason="set VAULTDROP_TEST_DATABASE_URL to a postgresql URL")
     for item in items:
-        if "postgres" in item.keywords and not on_postgres:
-            if REQUIRE_SERVICES:
-                item.add_marker(
-                    pytest.mark.xfail(reason="PostgreSQL required", run=True, strict=True)
-                )
-            else:
-                item.add_marker(
-                    pytest.mark.skip(reason="set VAULTDROP_TEST_DATABASE_URL to a postgresql URL")
-                )
+        if "postgres" in item.keywords:
+            item.add_marker(skip)
 
 
 @pytest.fixture

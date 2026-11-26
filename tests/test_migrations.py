@@ -15,7 +15,7 @@ def test_upgrade_creates_every_table_and_matches_the_models(database_url: str) -
     migrate.upgrade(database_url)
     engine = create_engine(database_url)
     try:
-        assert EXPECTED <= set(inspect(engine).get_table_names())
+        assert set(inspect(engine).get_table_names()) >= EXPECTED
         with engine.connect() as connection:
             drift = compare_metadata(MigrationContext.configure(connection), Base.metadata)
         assert drift == [], f"models and migrations disagree: {drift}"
