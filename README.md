@@ -123,7 +123,7 @@ pytest (SQLite)                          146 passed, 8 skipped (PostgreSQL-only 
 pytest (PostgreSQL 16, native)           150 passed, 4 skipped (real-S3 tests)
 pytest tests/test_s3_integration.py      4 passed against Garage v2.1.0 (including the CORS test); 3 passed, 1 skipped against moto_server
 coverage (PostgreSQL run)                94% of vaultdrop/ (s3.py is the lowest at 76%; storage error branches)
-node --test tests/                       27 tests, 27 passed
+node --test tests/*.test.js             27 tests, 27 passed
 tofu fmt -check / init / validate        clean (never applied)
 actionlint                               clean
 ```
