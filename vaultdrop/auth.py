@@ -1,71 +1,76 @@
-import base64
+import datetime as dt
 import hashlib
-import hmac
-import json
 import secrets
-import time
 
 from argon2 import PasswordHasher
-from argon2.exceptions import VerifyMismatchError
-from fastapi import Cookie, HTTPException
-from sqlalchemy import select
+from argon2.exceptions import InvalidHashError, VerificationError
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from .config import get_settings
-from .models import User
-
-passwords = PasswordHasher(time_cost=2, memory_cost=102400, parallelism=2)
-
-
-def hash_password(password: str) -> str:
-    return passwords.hash(password)
+from .config import Settings
+from .errors import Unauthorized
+from .models import User, UserSession, as_utc, utcnow
 
 
-def verify_password(password_hash: str, password: str) -> bool:
-    try:
-        return passwords.verify(password_hash, password)
-    except (VerifyMismatchError, ValueError):
-        return False
+class PasswordService:
+    """Argon2id hashing with parameters taken from configuration."""
+
+    def __init__(self, settings: Settings) -> None:
+        self._hasher = PasswordHasher(
+            time_cost=settings.argon2_time_cost,
+            memory_cost=settings.argon2_memory_kib,
+            parallelism=settings.argon2_parallelism,
+        )
+        # Verified against when a username does not exist, so that unknown users
+        # cost the same as known ones and timing does not reveal registration.
+        self._decoy = self._hasher.hash(secrets.token_urlsafe(16))
+
+    def hash(self, password: str) -> str:
+        return self._hasher.hash(password)
+
+    def verify(self, password_hash: str, password: str) -> bool:
+        try:
+            return self._hasher.verify(password_hash, password)
+        except (VerificationError, InvalidHashError):
+            return False
+
+    def verify_decoy(self, password: str) -> None:
+        self.verify(self._decoy, password)
 
 
-def sign_session(user_id: str) -> str:
-    payload = json.dumps(
-        {"sub": user_id, "iat": int(time.time()), "nonce": secrets.token_urlsafe(16)},
-        separators=(",", ":"),
-    ).encode()
-    body = base64.urlsafe_b64encode(payload).rstrip(b"=")
-    signature = hmac.new(
-        get_settings().session_secret.encode(), body, hashlib.sha256
-    ).digest()
-    return f"{body.decode()}.{base64.urlsafe_b64encode(signature).rstrip(b'=').decode()}"
+def token_digest(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
-def verify_session(token: str) -> str | None:
-    try:
-        body, signature_text = token.rsplit(".", 1)
-        pad = "=" * (-len(signature_text) % 4)
-        signature = base64.urlsafe_b64decode(signature_text + pad)
-        expected = hmac.new(
-            get_settings().session_secret.encode(), body.encode(), hashlib.sha256
-        ).digest()
-        if not hmac.compare_digest(signature, expected):
-            return None
-        payload = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
-        issued = int(payload["iat"])
-        if int(time.time()) - issued > 7 * 86400:
-            return None
-        return str(payload["sub"])
-    except (ValueError, KeyError, json.JSONDecodeError):
-        return None
+def issue_session(db: Session, user_id: str, ttl_seconds: int) -> str:
+    """Create a server-side session and return the opaque bearer token.
+
+    Only the SHA-256 of the token is stored, so a leaked database cannot be
+    replayed as cookies, and logout/expiry are enforced by the server.
+    """
+    token = secrets.token_urlsafe(32)
+    db.add(
+        UserSession(
+            token_hash=token_digest(token),
+            user_id=user_id,
+            expires_at=utcnow() + dt.timedelta(seconds=ttl_seconds),
+        )
+    )
+    return token
 
 
-def current_user(
-    db: Session, vaultdrop_session: str | None = Cookie(default=None)
-) -> User:
-    user_id = verify_session(vaultdrop_session or "")
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Authentication required")
-    user = db.scalar(select(User).where(User.id == user_id))
-    if not user:
-        raise HTTPException(status_code=401, detail="Authentication required")
-    return user
+def authenticate(db: Session, token: str | None) -> User:
+    if token:
+        row = db.execute(
+            select(User, UserSession.expires_at)
+            .join(UserSession, UserSession.user_id == User.id)
+            .where(UserSession.token_hash == token_digest(token))
+        ).first()
+        if row and as_utc(row[1]) > utcnow():
+            return row[0]
+    raise Unauthorized("Authentication required")
+
+
+def revoke_session(db: Session, token: str | None) -> None:
+    if token:
+        db.execute(delete(UserSession).where(UserSession.token_hash == token_digest(token)))

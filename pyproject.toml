@@ -21,6 +21,9 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["vaultdrop*"]
 
+[tool.setuptools.package-data]
+vaultdrop = ["static/*", "migrations/script.py.mako", "migrations/versions/*.py"]
+
 [dependency-groups]
 dev = [
   "httpx>=0.28,<1",
@@ -44,12 +47,20 @@ ignore = ["E501"]
 python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
-exclude = ["migrations"]
+exclude = ["vaultdrop/migrations"]
 
 [[tool.mypy.overrides]]
 module = ["boto3", "boto3.*", "botocore", "botocore.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-addopts = "-q --disable-warnings"
+addopts = "-q --disable-warnings -ra"
 testpaths = ["tests"]
+markers = [
+  "postgres: needs a PostgreSQL backend (VAULTDROP_TEST_DATABASE_URL)",
+  "s3_service: needs a real S3-compatible service (VAULTDROP_TEST_S3_ENDPOINT)",
+]
+
+[tool.coverage.run]
+source = ["vaultdrop"]
+omit = ["vaultdrop/migrations/*"]
