@@ -7,7 +7,6 @@ data "aws_iam_policy_document" "app" {
       "s3:AbortMultipartUpload",
       "s3:ListMultipartUploadParts",
       "s3:GetObject",
-      "s3:HeadObject",
       "s3:DeleteObject",
     ]
     resources = ["${aws_s3_bucket.vaultdrop.arn}/*"]
