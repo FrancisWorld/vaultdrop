@@ -7,20 +7,115 @@ on:
 permissions:
   contents: read
 
+env:
+  GARAGE_IMAGE: vaultdrop-garage:ci
+
 jobs:
   python:
+    name: python (${{ matrix.database }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        database: [sqlite, postgres]
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:f9cf3e1f0066f0eb0c48707d864f0ac5941e9ff454a072077d97a4d278d07d73
+        env:
+          POSTGRES_USER: vaultdrop
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: vaultdrop
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vaultdrop -d vaultdrop"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.12
+      - run: uv sync --locked --python 3.12
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy --strict vaultdrop tests
+      - name: Tests (SQLite)
+        if: matrix.database == 'sqlite'
+        run: uv run pytest tests -m "not s3_service" --cov=vaultdrop --cov-report=term-missing
+      - name: Tests (PostgreSQL, including the concurrency suite)
+        if: matrix.database == 'postgres'
+        env:
+          VAULTDROP_TEST_DATABASE_URL: postgresql+psycopg://vaultdrop:ci-only-password@127.0.0.1:5432/vaultdrop
+          VAULTDROP_REQUIRE_SERVICES: "1"
+        run: uv run pytest tests -m "not s3_service" --cov=vaultdrop --cov-report=term-missing
+
+  s3-integration:
+    name: multipart resume on a real S3 server (Garage)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-        with:
-          version: "latest"
       - run: uv python install 3.12
       - run: uv sync --locked --python 3.12
-      - run: uv run ruff check .
-      - run: uv run mypy --strict vaultdrop tests
-      - run: uv run pytest tests -q
-      - run: node --test tests/crypto.test.js
+      - name: Start Garage and provision a bucket
+        run: |
+          docker build -t "$GARAGE_IMAGE" deploy/garage
+          admin=$(openssl rand -hex 32)
+          key_id="GK$(openssl rand -hex 12)"
+          secret=$(openssl rand -hex 32)
+          echo "::add-mask::$admin"
+          echo "::add-mask::$secret"
+          docker run -d --name garage -p 3900:3900 -p 3903:3903 \
+            -e GARAGE_RPC_SECRET="$(openssl rand -hex 32)" -e GARAGE_ADMIN_TOKEN="$admin" "$GARAGE_IMAGE"
+          GARAGE_ADMIN_URL=http://127.0.0.1:3903 GARAGE_ADMIN_TOKEN="$admin" \
+            AWS_ACCESS_KEY_ID="$key_id" AWS_SECRET_ACCESS_KEY="$secret" VAULTDROP_S3_BUCKET=vaultdrop-it \
+            python3 scripts/garage_init.py
+          {
+            echo "AWS_ACCESS_KEY_ID=$key_id"
+            echo "AWS_SECRET_ACCESS_KEY=$secret"
+          } >> "$GITHUB_ENV"
+      - name: Integration tests against Garage
+        env:
+          VAULTDROP_TEST_S3_ENDPOINT: http://127.0.0.1:3900
+          VAULTDROP_TEST_S3_BUCKET: vaultdrop-it
+          VAULTDROP_TEST_S3_REGION: garage
+          VAULTDROP_TEST_S3_CORS: "1"
+          VAULTDROP_REQUIRE_SERVICES: "1"
+        run: uv run pytest tests/test_s3_integration.py -m s3_service
+      - if: failure()
+        run: docker logs garage
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test tests/
+
+  compose-e2e:
+    name: docker compose end to end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: ./scripts/dev-env.sh
+      - run: docker compose up --build --detach
+      - name: Wait for the app
+        run: |
+          for _ in $(seq 1 90); do
+            curl -fsS http://127.0.0.1:55001/health && exit 0
+            sleep 2
+          done
+          docker compose logs
+          exit 1
+      - run: node scripts/e2e.mjs http://127.0.0.1:55001
+      - if: failure()
+        run: docker compose logs
+      - if: always()
+        run: docker compose down --volumes
 
   infrastructure:
     runs-on: ubuntu-latest
