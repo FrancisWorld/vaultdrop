@@ -14,6 +14,11 @@ data "aws_iam_policy_document" "app" {
   statement {
     actions   = ["kms:Encrypt", "kms:Decrypt", "kms:GenerateDataKey"]
     resources = [aws_kms_key.vaultdrop.arn]
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["s3.${var.aws_region}.amazonaws.com"]
+    }
   }
 }
 

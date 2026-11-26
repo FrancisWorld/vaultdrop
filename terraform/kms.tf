@@ -23,8 +23,11 @@ data "aws_iam_policy_document" "kms" {
       identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
     }
   }
+  # SSE-KMS calls KMS with the caller's credentials, not as the S3 service
+  # principal, so grant use only through S3, only from this account, and only
+  # for objects in the VaultDrop bucket.
   statement {
-    sid    = "AllowS3Use"
+    sid    = "AllowUseThroughS3ForVaultDropBucket"
     effect = "Allow"
     actions = [
       "kms:Encrypt",
@@ -35,8 +38,23 @@ data "aws_iam_policy_document" "kms" {
     ]
     resources = ["*"]
     principals {
-      type        = "Service"
-      identifiers = ["s3.amazonaws.com"]
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["s3.${var.aws_region}.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "kms:CallerAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+    condition {
+      test     = "StringLike"
+      variable = "kms:EncryptionContext:aws:s3:arn"
+      values   = ["arn:aws:s3:::${var.bucket_name}", "arn:aws:s3:::${var.bucket_name}/*"]
     }
   }
 }
