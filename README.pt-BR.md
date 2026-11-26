@@ -55,11 +55,11 @@ node scripts/e2e.mjs http://127.0.0.1:55001
 docker compose down --volumes
 ```
 
-A stack usa PostgreSQL 17, [Garage](https://garagehq.deuxfleurs.fr/) v2.1.0 (implementação real de S3, imagem fixada por digest) e a aplicação. **Status: não verificado neste checkout.** A VM do Docker disponível ficou sem disco e `docker compose build` falhou antes de qualquer container subir. O arquivo compose, `deploy/garage/`, `scripts/garage_init.py` e o job de CI correspondente (`compose-e2e`) não foram executados. As chamadas à API administrativa do Garage feitas pelo script de init (layout, importar chave, bucket, permissão) e o comportamento de multipart/list-parts/range/CORS foram exercitados manualmente contra o Garage v2.1.0 em uma sessão anterior, antes de o disco encher.
+A stack usa PostgreSQL 17, [Garage](https://garagehq.deuxfleurs.fr/) v2.1.0 (implementação real de S3, imagem fixada por digest) e a aplicação. **Status: executado ponta a ponta.** `docker compose up --build` subiu PostgreSQL 17, Garage e a aplicação (container de init saiu com 0, app saudável) e `node scripts/e2e.mjs` passou contra ela, assim como os passos de CI dos jobs `compose-e2e` e `s3-integration` executados manualmente em um notebook macOS (não nos runners do GitHub). As regras de CORS do bucket no Garage foram checadas com `curl`: uma origem permitida é devolvida sozinha (com `ETag` exposto) e outra origem é rejeitada. Achado e corrigido nessa execução: a regra de CORS listava várias origens e o Garage devolvia a lista inteira, o que navegadores rejeitam; o bootstrap agora grava uma regra por origem.
 
 ### O que foi realmente executado ponta a ponta
 
-O mesmo script (`scripts/e2e.mjs`) rodou contra a aplicação real (uvicorn) em PostgreSQL 16 nativo, com `moto_server` como endpoint S3. Ele importa os próprios `crypto.js` e `client.js` do navegador:
+`scripts/e2e.mjs` importa os próprios `crypto.js` e `client.js` do navegador. Rodou contra a stack do Compose acima e, antes, contra o uvicorn em PostgreSQL 16 nativo com `moto_server`; ambos passaram com os mesmos passos. Saída da segunda execução:
 
 ```text
 $ node scripts/e2e.mjs http://127.0.0.1:55001
@@ -121,14 +121,14 @@ ruff check . / ruff format --check .     limpo
 mypy --strict vaultdrop tests            Success: no issues found in 42 source files
 pytest (SQLite)                          146 passed, 8 skipped (testes só de PostgreSQL e S3 real)
 pytest (PostgreSQL 16, nativo)           150 passed, 4 skipped (testes de S3 real)
-pytest tests/test_s3_integration.py      3 passed, 1 skipped (CORS) contra moto_server via HTTP, em SQLite e PostgreSQL
+pytest tests/test_s3_integration.py      4 passed contra Garage v2.1.0 (incluindo o teste de CORS); 3 passed, 1 skipped contra moto_server
 cobertura (execução PostgreSQL)          94% de vaultdrop/ (s3.py é o menor, 76%; ramos de erro do storage)
 node --test tests/                       27 testes, 27 passaram
 tofu fmt -check / init / validate        limpo (nunca aplicado)
 actionlint                               limpo
 ```
 
-Não executados aqui: o job de integração com Garage e o teste de CORS (somente no CI), e o Docker Compose. O PostgreSQL 16 era o servidor disponível localmente; compose e CI usam o 17.
+Não executado: os workflows do GitHub Actions nos runners do GitHub (seus passos foram reproduzidos localmente, então diferenças específicas de Linux podem restar), e a suíte de testes contra PostgreSQL 17 (a suíte local usou o 16; só a stack do Compose rodou o 17).
 
 ## Limitações
 

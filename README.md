@@ -55,11 +55,11 @@ node scripts/e2e.mjs http://127.0.0.1:55001
 docker compose down --volumes
 ```
 
-The stack runs PostgreSQL 17, [Garage](https://garagehq.deuxfleurs.fr/) v2.1.0 (a real S3 implementation, image pinned by digest) and the app. **Status: not verified in this checkout.** The Docker VM that was available ran out of disk, so `docker compose build` failed before any container started. The compose file, `deploy/garage/`, `scripts/garage_init.py` and the CI job that runs it (`compose-e2e`) are unexecuted. The Garage admin-API calls the init script makes (layout, key import, bucket, grant) and multipart/list-parts/range/CORS behaviour were exercised by hand against Garage v2.1.0 in an earlier session, before the disk filled.
+The stack runs PostgreSQL 17, [Garage](https://garagehq.deuxfleurs.fr/) v2.1.0 (a real S3 implementation, image pinned by digest) and the app. **Status: run end to end.** `docker compose up --build` brought up PostgreSQL 17, Garage and the app (init container exited 0, app healthy) and `node scripts/e2e.mjs` passed against it, as did the CI steps of the `compose-e2e` and `s3-integration` jobs run by hand on a macOS laptop (not on GitHub's runners). Browser CORS rules on Garage were checked with `curl`: an allowed origin is echoed back singly (`ETag` exposed) and another origin is rejected. Found and fixed during that run: the bucket CORS rule listed several origins in one rule and Garage echoed the whole list back, which browsers reject; bootstrap now writes one rule per origin.
 
 ### What was actually run end to end
 
-The same script (`scripts/e2e.mjs`) was run against the real app (uvicorn) on native PostgreSQL 16 with `moto_server` as the S3 endpoint. It imports the browser's own `crypto.js` and `client.js`:
+`scripts/e2e.mjs` imports the browser's own `crypto.js` and `client.js`. It ran against the Compose stack above and, earlier, against uvicorn on native PostgreSQL 16 with `moto_server`; both passed with identical steps. Output of the second run:
 
 ```text
 $ node scripts/e2e.mjs http://127.0.0.1:55001
@@ -121,14 +121,14 @@ ruff check . / ruff format --check .     clean
 mypy --strict vaultdrop tests            Success: no issues found in 42 source files
 pytest (SQLite)                          146 passed, 8 skipped (PostgreSQL-only and real-S3 tests)
 pytest (PostgreSQL 16, native)           150 passed, 4 skipped (real-S3 tests)
-pytest tests/test_s3_integration.py      3 passed, 1 skipped (CORS) against moto_server over HTTP, on SQLite and PostgreSQL
+pytest tests/test_s3_integration.py      4 passed against Garage v2.1.0 (including the CORS test); 3 passed, 1 skipped against moto_server
 coverage (PostgreSQL run)                94% of vaultdrop/ (s3.py is the lowest at 76%; storage error branches)
 node --test tests/                       27 tests, 27 passed
 tofu fmt -check / init / validate        clean (never applied)
 actionlint                               clean
 ```
 
-Not run here: the Garage-backed integration job and the CORS test (CI only), and Docker Compose. PostgreSQL 16 was the locally available server; compose and CI use 17.
+Not run: the GitHub Actions workflows themselves on GitHub's runners (their steps were replayed locally, so Linux-specific differences could remain), and the SQLite and PostgreSQL test suites against PostgreSQL 17 (the local suite used 16; only the Compose stack ran 17).
 
 ## Limitations
 
