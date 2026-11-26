@@ -72,14 +72,17 @@ class S3Service:
         self.client.put_bucket_cors(
             Bucket=self.bucket,
             CORSConfiguration={
+                # One rule per origin: some servers echo the whole list back, which
+                # browsers reject as an invalid Access-Control-Allow-Origin value.
                 "CORSRules": [
                     {
-                        "AllowedOrigins": sorted(self.settings.origins),
+                        "AllowedOrigins": [origin],
                         "AllowedMethods": ["PUT", "GET", "HEAD"],
                         "AllowedHeaders": ["*"],
                         "ExposeHeaders": ["ETag"],
                         "MaxAgeSeconds": 3600,
                     }
+                    for origin in sorted(self.settings.origins)
                 ]
             },
         )

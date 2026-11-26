@@ -142,3 +142,11 @@ def test_register_then_cookie_is_the_only_credential(client: TestClient) -> None
     )
     assert client.get("/v1/files").status_code == 200
     assert PASSWORD
+
+
+def test_bucket_cors_has_one_origin_per_rule(settings: Settings, aws: object) -> None:
+    two = settings.model_copy(update={"allowed_origins": "http://a.test,http://b.test"})
+    create_app(two).state.container.s3.bootstrap()
+    rules = aws.get_bucket_cors(Bucket="vaultdrop-test-bucket")["CORSRules"]  # type: ignore[attr-defined]
+    assert [r["AllowedOrigins"] for r in rules] == [["http://a.test"], ["http://b.test"]]
+    assert all(r["ExposeHeaders"] == ["ETag"] for r in rules)
